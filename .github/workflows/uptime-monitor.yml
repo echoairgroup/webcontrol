@@ -1,0 +1,22 @@
+name: WebControl scheduled uptime checks
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run monitoring checks
+        env:
+          API_URL: ${{ secrets.WEBCONTROL_API_URL }}
+          MONITOR_SECRET: ${{ secrets.WEBCONTROL_MONITOR_SECRET }}
+        run: |
+          test -n "$API_URL" || (echo "Missing WEBCONTROL_API_URL" && exit 1)
+          test -n "$MONITOR_SECRET" || (echo "Missing WEBCONTROL_MONITOR_SECRET" && exit 1)
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 5 \
+            -X POST "$API_URL/api/uptime/check-all" \
+            -H "Content-Type: application/json" \
+            -H "X-Monitor-Secret: $MONITOR_SECRET" \
+            -d '{}'
