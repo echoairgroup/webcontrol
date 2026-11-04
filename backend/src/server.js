@@ -33,7 +33,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use('/api/collect', cors({ origin: true, methods:['POST','OPTIONS'], allowedHeaders:['Content-Type'], maxAge:600 }));
-app.use((req,res,next)=>{if(req.path==='/api/collect')return next();return cors({ origin(origin, cb) { if (!origin || allowedOrigins.has(origin)) return cb(null, true); return cb(new Error('Origin is not allowed by WebControl CORS policy')); }, methods:['GET','POST','PUT','DELETE','OPTIONS'], allowedHeaders:['Content-Type','Authorization','X-Monitor-Secret'], maxAge:600 })(req,res,next);});
+app.use((req,res,next)=>{if(req.path==='/api/collect')return next();return cors({ origin(origin, cb) { if (!origin || allowedOrigins.has(origin)) return cb(null, true); return cb(new Error('Origin is not allowed by WebControl CORS policy')); }, methods:['GET','POST','PUT','DELETE','OPTIONS'], allowedHeaders:['Content-Type','Authorization','X-Monitor-Secret'], credentials:true, maxAge:600 })(req,res,next);});
 app.use(express.json({ limit: '32kb' }));
 app.use('/api/', rateLimit({ windowMs: 60_000, limit: 180, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use('/api/auth/', rateLimit({ windowMs: 15*60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false }));
