@@ -11,7 +11,7 @@ const when = s => s ? new Date(s).toLocaleString() : "—";
 const icon = (name) => ({grid:'▦',globe:'◎',chart:'⌁',pulse:'⌁',users:'♙',search:'⌕',zap:'ϟ',clock:'◷',bug:'⌘',target:'◎',file:'▤',plug:'⌘',settings:'⚙',refresh:'↻',plus:'+',external:'↗',download:'↓',menu:'☰',bell:'♧',chevron:'›',github:'◉',shield:'⬡',activity:'⌁',monitor:'▣',link:'↗',copy:'▢',check:'✓',alert:'!',arrow:'→',trash:'×',terminal:'⌘',database:'▤',chartup:'⌃'})[name] || '·';
 async function api(path, opts={}) {
   if (!API) throw new Error("API_BASE_URL is not configured. Set it in frontend/config.js after deploying the Render API.");
-  const res = await fetch(`${API}${path}`, { credentials:"omit", ...opts, headers:{ ...(opts.body?{"Content-Type":"application/json"}:{}), ...(localStorage.getItem('webcontrol_session')?{Authorization:`Bearer ${localStorage.getItem('webcontrol_session')}`} : {}), ...(opts.headers||{}) } });
+  const res = await fetch(`${API}${path}`, { credentials:"include", ...opts, headers:{ ...(opts.body?{"Content-Type":"application/json"}:{}), ...(localStorage.getItem('webcontrol_session')?{Authorization:`Bearer ${localStorage.getItem('webcontrol_session')}`} : {}), ...(opts.headers||{}) } });
   const body = await res.json().catch(()=>({}));
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
   return body;
