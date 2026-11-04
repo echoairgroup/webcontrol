@@ -101,7 +101,7 @@ The requested scopes are `analytics.readonly` and `webmasters.readonly` plus sig
 4. Push the change. The workflow `.github/workflows/pages.yml` publishes the contents of `frontend/`.
 5. Set the final published URL as `FRONTEND_URL` in Render, and make sure it matches the GitHub OAuth callback flow's destination.
 
-Expected project URL for the `echoairgroup` owner: `https://echoairgroup.github.io/WebControl/`.
+Expected project URL for the `echoairgroup` owner: `https://echoairgroup.github.io/webcontrol/`.
 
 ## Render deployment
 
