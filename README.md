@@ -83,7 +83,7 @@ In GitHub → Settings → Developer settings → OAuth Apps, create an OAuth Ap
 
 `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/github/callback`
 
-The current implementation requests `read:user` only. Repository discovery is restricted to public repositories. GitHub Pages metadata is fetched without an OAuth token because GitHub allows this endpoint for public repositories; using the OAuth token here would require the broad `repo` scope. WebControl calls only GET endpoints. Private repository discovery is not enabled in this release; it should be added with a GitHub App using narrowly scoped read-only permissions, not a broad `repo` OAuth scope.
+The current implementation requests `read:user` only. Repository discovery is restricted to public repositories. WebControl reads the `has_pages` and `homepage` fields from the repository list response and does not make a separate per-repository Pages API call. It therefore avoids the unauthenticated REST API rate limit and does not need the broad `repo` OAuth scope. When a repository has a custom Pages domain, set that URL as the repository website/homepage so WebControl can import it; otherwise, WebControl derives the standard `owner.github.io/repository` URL. Private repository discovery is not enabled in this release; it should be added with a GitHub App using narrowly scoped read-only permissions, not a broad `repo` OAuth scope.
 
 ### Google OAuth (optional)
 
