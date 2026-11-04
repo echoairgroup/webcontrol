@@ -42,7 +42,7 @@ GitHub Pages only serves static assets. Keep all OAuth secrets, database credent
 
 1. Create a Neon database and copy its **pooled** connection string. WebControl's dedicated Neon project has already been provisioned and its schema initialized; use its connection string when configuring the Render service.
 2. Copy `backend/.env.example` to `backend/.env` (or use the root `.env.example`) and fill the environment variables.
-3. Configure a GitHub OAuth App with callback `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/github/callback`. Request `read:user` and `public_repo` only; WebControl calls GitHub read endpoints only.
+3. Configure a GitHub OAuth App with callback `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/github/callback`. Request `read:user` only. WebControl limits discovery to public repositories and fetches public Pages metadata without an OAuth token, so it does not need broad repository write scopes.
 4. In `frontend/config.js`, set `API_BASE_URL` to your local API URL, for example `http://localhost:10000`.
 5. Run the backend:
 
@@ -83,7 +83,7 @@ In GitHub → Settings → Developer settings → OAuth Apps, create an OAuth Ap
 
 `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/github/callback`
 
-The current implementation requests `read:user` only. Public repository discovery uses GitHub public-resource access and WebControl calls only GET endpoints. Private repository discovery is not enabled in this release; it should be added with a GitHub App using narrowly scoped read-only permissions, not a broad `repo` OAuth scope.
+The current implementation requests `read:user` only. Repository discovery is restricted to public repositories. GitHub Pages metadata is fetched without an OAuth token because GitHub allows this endpoint for public repositories; using the OAuth token here would require the broad `repo` scope. WebControl calls only GET endpoints. Private repository discovery is not enabled in this release; it should be added with a GitHub App using narrowly scoped read-only permissions, not a broad `repo` OAuth scope.
 
 ### Google OAuth (optional)
 
