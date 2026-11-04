@@ -105,7 +105,7 @@ Enable these APIs in the same Google Cloud project:
 
 The app requests read-only access only: `analytics.readonly` and `webmasters.readonly`, plus OpenID/email/profile for account identification. The OAuth state is signed by the API and expires after 10 minutes.
 
-Add the resulting `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the Render service environment. Do not commit or publish the secret. The Google account that authorizes WebControl must already have access to the relevant GA4 properties and Search Console properties. After connecting Google in WebControl, map a GA4 property ID and/or Search Console site URL to a monitored website and run a sync.
+Add the resulting `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the Render service environment. Do not commit or publish the secret. The Google account that authorizes WebControl must already have access to the relevant GA4 properties and Search Console properties. After connecting Google in WebControl, use **Auto-map & sync Google data** in Integrations. WebControl matches GA4 web-stream URLs and Search Console property URLs only when the match is unambiguous. You can manually select any remaining property mapping before syncing.
 
 ## Publish on GitHub Pages
 
