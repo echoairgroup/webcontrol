@@ -106,6 +106,93 @@ app.get('/api/integrations/google/start',requireAuth,async(req,res)=>{if(!GOOGLE
 app.get('/api/integrations/google/callback',async(req,res)=>{try{const {code,state}=req.query;const oauthState=readToken(String(state||''));if(!code||!oauthState?.uid||!oauthState?.nonce)throw new Error('Invalid or expired Google OAuth state');const uid=oauthState.uid;const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,redirect_uri:`${String(process.env.API_PUBLIC_URL||'').replace(/\/$/,'')}/api/integrations/google/callback`,grant_type:'authorization_code'})});const data=await response.json();if(!response.ok)throw new Error(data.error_description||data.error||'Google token exchange failed');const info=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{authorization:`Bearer ${data.access_token}`}}).then(r=>r.json());await pool.query(`INSERT INTO integrations(user_id,provider,encrypted_access_token,encrypted_refresh_token,expires_at,scopes,metadata) VALUES($1,'google',$2,$3,$4,$5,$6) ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_access_token=EXCLUDED.encrypted_access_token,encrypted_refresh_token=COALESCE(EXCLUDED.encrypted_refresh_token,integrations.encrypted_refresh_token),expires_at=EXCLUDED.expires_at,scopes=EXCLUDED.scopes,metadata=EXCLUDED.metadata,updated_at=NOW()`,[uid,encrypt(data.access_token),data.refresh_token?encrypt(data.refresh_token):null,new Date(Date.now()+data.expires_in*1000),data.scope||'',JSON.stringify({email:info.email})]);res.redirect(`${FRONTEND_URL}/#google=connected`);}catch(e){console.error('[google callback]',e);res.status(500).send('Google connection failed. Check OAuth settings and try again.');}});
 app.get('/api/integrations/google/properties',requireAuth,async(req,res)=>{try{const token=await googleToken(req.auth.uid);const response=await fetch('https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200',{headers:{authorization:`Bearer ${token}`}});const body=await response.json();if(!response.ok)throw new Error(body.error?.message||'Could not load GA4 properties');res.json({properties:(body.accountSummaries||[]).flatMap(a=>(a.propertySummaries||[]).map(p=>({property:p.property,displayName:p.displayName,account:a.displayName}))) });}catch(e){res.status(502).json({error:e.message});}});
 app.get('/api/integrations/google/search-console-sites',requireAuth,async(req,res)=>{try{const token=await googleToken(req.auth.uid);const response=await fetch('https://www.googleapis.com/webmasters/v3/sites',{headers:{authorization:`Bearer ${token}`}});const body=await response.json();if(!response.ok)throw new Error(body.error?.message||'Could not load Search Console sites');res.json({sites:body.siteEntry||[]});}catch(e){res.status(502).json({error:e.message});}});
+app.post('/api/integrations/google/auto-map',requireAuth,async(req,res)=>{try{
+ const token=await googleToken(req.auth.uid);
+ const sitesResult=await pool.query('SELECT id,name,url,ga4_property_id,search_console_site_url FROM sites WHERE user_id=$1 ORDER BY name',[req.auth.uid]);
+ const sites=sitesResult.rows;
+ const hostCounts=new Map();
+ const normaliseUrl=(raw)=>{try{const u=new URL(String(raw));return{host:u.hostname.toLowerCase().replace(/^www\./,''),path:(u.pathname.replace(/\/+$/,'')||'/')}}catch{return null;}};
+ const normaliseSearchConsole=(raw)=>{const value=String(raw||'');if(value.toLowerCase().startsWith('sc-domain:'))return{host:value.slice(10).toLowerCase().replace(/^www\./,''),path:'/'};return normaliseUrl(value);};
+ for(const site of sites){const u=normaliseUrl(site.url);if(u)hostCounts.set(u.host,(hostCounts.get(u.host)||0)+1);}
+ const properties=[];
+ let pageToken=null;
+ for(let page=0;page<10;page++){
+  const u=new URL('https://analyticsadmin.googleapis.com/v1beta/accountSummaries');
+  u.searchParams.set('pageSize','200');
+  if(pageToken)u.searchParams.set('pageToken',pageToken);
+  const response=await fetch(u,{headers:{authorization:'Bearer '+token}});
+  const body=await response.json();
+  if(!response.ok)throw new Error(body.error?.message||'Could not list GA4 properties');
+  for(const account of body.accountSummaries||[])for(const property of account.propertySummaries||[])properties.push({property:property.property,displayName:property.displayName,account:account.displayName});
+  pageToken=body.nextPageToken||null;
+  if(!pageToken)break;
+ }
+ const gaStreams=[];
+ let streamErrors=0;
+ for(const property of properties){
+  const resource=String(property.property||'');
+  if(!/^properties\/\d+$/.test(resource))continue;
+  let nextPage=null;
+  for(let page=0;page<5;page++){
+   const u=new URL('https://analyticsadmin.googleapis.com/v1beta/'+resource+'/dataStreams');
+   u.searchParams.set('pageSize','200');
+   if(nextPage)u.searchParams.set('pageToken',nextPage);
+   const response=await fetch(u,{headers:{authorization:'Bearer '+token}});
+   const body=await response.json();
+   if(!response.ok){streamErrors++;break;}
+   for(const stream of body.dataStreams||[]){
+    if(stream.type==='WEB_DATA_STREAM'&&stream.webStreamData?.defaultUri){
+     gaStreams.push({property:resource,displayName:property.displayName,defaultUri:stream.webStreamData.defaultUri});
+    }
+   }
+   nextPage=body.nextPageToken||null;
+   if(!nextPage)break;
+  }
+ }
+ let searchConsoleSites=[];
+ let searchConsoleError=null;
+ try{
+  const response=await fetch('https://www.googleapis.com/webmasters/v3/sites',{headers:{authorization:'Bearer '+token}});
+  const body=await response.json();
+  if(!response.ok)throw new Error(body.error?.message||'Could not list Search Console properties');
+  searchConsoleSites=body.siteEntry||[];
+ }catch(e){searchConsoleError=String(e.message||e).slice(0,240);}
+ const summary={ga4Matched:0,searchConsoleMatched:0,alreadyMapped:0,ambiguous:0,unmatched:0,ga4Properties:properties.length,ga4WebStreams:gaStreams.length,searchConsoleProperties:searchConsoleSites.length,streamErrors,searchConsoleError,mappings:[]};
+ for(const site of sites){
+  const target=normaliseUrl(site.url);
+  if(!target){summary.unmatched++;continue;}
+  let ga4Match=null;
+  if(!site.ga4_property_id){
+   const candidates=[...new Set(gaStreams.filter(stream=>{
+    const source=normaliseUrl(stream.defaultUri);
+    if(!source||source.host!==target.host)return false;
+    if(source.path===target.path)return true;
+    return source.path==='/'&&target.path==='/'&&(hostCounts.get(target.host)===1);
+   }).map(stream=>stream.property))];
+   if(candidates.length===1)ga4Match=candidates[0];
+   else if(candidates.length>1)summary.ambiguous++;
+  }
+  let gscMatch=null;
+  if(!site.search_console_site_url){
+   const candidates=[...new Set(searchConsoleSites.filter(entry=>{
+    const source=normaliseSearchConsole(entry.siteUrl);
+    if(!source||source.host!==target.host)return false;
+    if(source.path===target.path)return true;
+    return source.path==='/'&&target.path==='/'&&(hostCounts.get(target.host)===1);
+   }).map(entry=>entry.siteUrl))];
+   if(candidates.length===1)gscMatch=candidates[0];
+   else if(candidates.length>1)summary.ambiguous++;
+  }
+  if(ga4Match||gscMatch){
+   await pool.query('UPDATE sites SET ga4_property_id=COALESCE(ga4_property_id,$1),search_console_site_url=COALESCE(search_console_site_url,$2),updated_at=NOW() WHERE id=$3 AND user_id=$4',[ga4Match,gscMatch,site.id,req.auth.uid]);
+   if(ga4Match)summary.ga4Matched++;
+   if(gscMatch)summary.searchConsoleMatched++;
+   summary.mappings.push({site:site.name,url:site.url,ga4_property_id:ga4Match,search_console_site_url:gscMatch});
+  }else if(site.ga4_property_id||site.search_console_site_url){summary.alreadyMapped++;}
+  else summary.unmatched++;
+ }
+ res.json(summary);
+}catch(e){console.error('[Google auto-map]',e);res.status(502).json({error:e.message||'Google property auto-mapping failed'});}});
 app.post('/api/integrations/google/sync',requireAuth,async(req,res)=>{try{const token=await googleToken(req.auth.uid);const {rows:sites}=await pool.query('SELECT * FROM sites WHERE user_id=$1 AND (ga4_property_id IS NOT NULL OR search_console_site_url IS NOT NULL)',[req.auth.uid]);let synced=0;for(const site of sites){if(site.ga4_property_id){const start=new Date(Date.now()-28*86400000).toISOString().slice(0,10);const end=new Date(Date.now()-86400000).toISOString().slice(0,10);const r=await fetch(`https://analyticsdata.googleapis.com/v1beta/${site.ga4_property_id}:runReport`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({dateRanges:[{startDate:start,endDate:end}],dimensions:[{name:'date'}],metrics:[{name:'activeUsers'},{name:'sessions'},{name:'screenPageViews'},{name:'bounceRate'},{name:'engagementRate'}],limit:1000})});const d=await r.json();if(r.ok)for(const row of d.rows||[]){const date=row.dimensionValues?.[0]?.value;const vals=(d.metricHeaders||[]).map((h,i)=>[h.name,row.metricValues?.[i]?.value]);await pool.query(`INSERT INTO external_metrics(site_id,provider,metric_date,dimensions,metric_values) VALUES($1,'ga4',$2,'{}',$3) ON CONFLICT(site_id,provider,metric_date,dimensions) DO UPDATE SET metric_values=EXCLUDED.metric_values,fetched_at=NOW()`,[site.id,`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`,JSON.stringify(Object.fromEntries(vals))]);}else console.warn('GA4 sync',d.error?.message);}
  if(site.search_console_site_url){const start=new Date(Date.now()-29*86400000).toISOString().slice(0,10);const end=new Date(Date.now()-3*86400000).toISOString().slice(0,10);const u=`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site.search_console_site_url)}/searchAnalytics/query`;const r=await fetch(u,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({startDate:start,endDate:end,dimensions:['date'],rowLimit:1000})});const d=await r.json();if(r.ok)for(const row of d.rows||[]){const v={clicks:row.clicks,impressions:row.impressions,ctr:row.ctr,position:row.position};await pool.query(`INSERT INTO external_metrics(site_id,provider,metric_date,dimensions,metric_values) VALUES($1,'search_console',$2,'{}',$3) ON CONFLICT(site_id,provider,metric_date,dimensions) DO UPDATE SET metric_values=EXCLUDED.metric_values,fetched_at=NOW()`,[site.id,row.keys[0],JSON.stringify(v)]);}else console.warn('GSC daily sync',d.error?.message);
  for(const dimension of ['query','page']){const qr=await fetch(u,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({startDate:start,endDate:end,dimensions:[dimension],rowLimit:1000})});const qd=await qr.json();if(qr.ok)for(const row of qd.rows||[]){const v={clicks:row.clicks,impressions:row.impressions,ctr:row.ctr,position:row.position};await pool.query(`INSERT INTO external_metrics(site_id,provider,metric_date,dimensions,metric_values) VALUES($1,'search_console',$2,$3,$4) ON CONFLICT(site_id,provider,metric_date,dimensions) DO UPDATE SET metric_values=EXCLUDED.metric_values,fetched_at=NOW()`,[site.id,end,JSON.stringify({[dimension]:row.keys[0]}),JSON.stringify(v)]);}else console.warn(`GSC ${dimension} sync`,qd.error?.message);}}
