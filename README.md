@@ -87,11 +87,25 @@ The current implementation requests `read:user` only. Public repository discover
 
 ### Google OAuth (optional)
 
-Create an OAuth client and enable Google Analytics Admin API, Google Analytics Data API and Google Search Console API. Add this callback URL:
+Use the Google Cloud project that owns WebControl's OAuth client. In Google Auth Platform, configure the app name, support email and developer contact. Select **External** for a normal Google account, then add your Google account under **Test users** while the app is in testing.
 
-`https://YOUR-RENDER-SERVICE.onrender.com/api/integrations/google/callback`
+Create an OAuth client with application type **Web application** and use this exact authorized redirect URI:
 
-The requested scopes are `analytics.readonly` and `webmasters.readonly` plus sign-in identity. Add a GA4 property ID and/or Search Console site URL to a website using `POST /api/sites/:id/google-config`, then call `POST /api/integrations/google/sync`.
+`https://webcontrol-api.onrender.com/api/integrations/google/callback`
+
+Optional authorized JavaScript origin:
+
+`https://echoairgroup.github.io`
+
+Enable these APIs in the same Google Cloud project:
+
+- Google Analytics Admin API
+- Google Analytics Data API
+- Google Search Console API
+
+The app requests read-only access only: `analytics.readonly` and `webmasters.readonly`, plus OpenID/email/profile for account identification. The OAuth state is signed by the API and expires after 10 minutes.
+
+Add the resulting `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the Render service environment. Do not commit or publish the secret. The Google account that authorizes WebControl must already have access to the relevant GA4 properties and Search Console properties. After connecting Google in WebControl, map a GA4 property ID and/or Search Console site URL to a monitored website and run a sync.
 
 ## Publish on GitHub Pages
 
