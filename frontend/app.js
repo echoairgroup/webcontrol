@@ -80,7 +80,7 @@ async function googleConnect(){try{const r=await api('/api/integrations/google/s
 async function googleSync(){try{const r=await api('/api/integrations/google/sync',{method:'POST',body:JSON.stringify({})});await loadData();await render();toast(`Google metrics synced for ${r.synced||0} website(s).`);}catch(e){toast(e.message,true)}}
 async function saveGoogleConfig(id){try{const ga=$(`#ga4-${CSS.escape(id)}`)?.value||null;const gsc=$(`#gsc-${CSS.escape(id)}`)?.value||null;await api(`/api/sites/${id}/google-config`,{method:'POST',body:JSON.stringify({ga4_property_id:ga,search_console_site_url:gsc})});await loadData();await render();toast('Google property mapping saved');}catch(e){toast(e.message,true)}}
 async function clickAction(el){const action=el.dataset.action;const id=el.dataset.id;
- if(action==='login-github'){if(!API)return toast('API_BASE_URL must be set first.',true);try{const r=await api('/api/auth/github');location.href=r.url;}catch(e){toast(e.message,true)}}
+ if(action==='login-github'){if(!API)return toast('API_BASE_URL must be set first.',true);location.href=`${API}/api/auth/github`}
  if(action==='logout'){try{await api('/api/auth/logout',{method:'POST',body:JSON.stringify({})});localStorage.removeItem('webcontrol_session');state.user=null;state.sites=[];render();}catch(e){toast(e.message,true)}}
  if(action==='refresh')refresh(); if(action==='import-github')importGithub(); if(action==='add-site')addSite(); if(action==='check-site')checkSite(id); if(action==='run-checks')runChecks(); if(action==='export-csv')exportCsv(); if(action==='google-connect')googleConnect(); if(action==='google-sync')googleSync(); if(action==='save-google-config')saveGoogleConfig(id);
  if(action==='toggle-menu')$('#sidebar')?.classList.toggle('open');
